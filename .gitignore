@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Generated output
+output/
+
+# Environment variables
+.env
+
+# Test data / Sample JSON files
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude
+.claude/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Coverage
+coverage/

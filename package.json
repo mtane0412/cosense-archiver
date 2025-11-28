@@ -1,0 +1,25 @@
+{
+  "name": "cosense-archiver",
+  "version": "1.0.0",
+  "description": "Cosense(旧Scrapbox)のJSONエクスポートから静的サイトを生成するCLIツール",
+  "main": "dist/index.js",
+  "bin": {
+    "cosense-archiver": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit"
+  },
+  "keywords": ["cosense", "scrapbox", "static-site-generator", "archive"],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "esbuild": "^0.27.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.14"
+  }
+}
