@@ -4,7 +4,31 @@
  * CosenseのJSONエクスポートから静的サイトを生成するCLIツール
  */
 import * as fs from "fs/promises";
+import * as fsSync from "fs";
 import * as path from "path";
+
+// .envファイルを読み込む（dotenvの代わりに手動で読み込み）
+function loadEnvFile(): void {
+  const envPath = path.join(process.cwd(), ".env");
+  if (fsSync.existsSync(envPath)) {
+    const envContent = fsSync.readFileSync(envPath, "utf-8");
+    for (const line of envContent.split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith("#")) {
+        const eqIndex = trimmed.indexOf("=");
+        if (eqIndex > 0) {
+          const key = trimmed.slice(0, eqIndex);
+          const value = trimmed.slice(eqIndex + 1);
+          if (!process.env[key]) {
+            process.env[key] = value;
+          }
+        }
+      }
+    }
+  }
+}
+
+loadEnvFile();
 import { loadCosenseJson } from "./parser/json-parser.js";
 import { isCosenseExport } from "./parser/types.js";
 import { buildLinkGraph } from "./analyzer/link-analyzer.js";
@@ -21,6 +45,11 @@ import {
 } from "./generator/html-generator.js";
 import { generateCSS } from "./generator/css-generator.js";
 import { generateSearchJS } from "./generator/js-generator.js";
+import {
+  isGyazoUrl,
+  resolveGyazoUrls,
+  type GyazoResolveResult,
+} from "./resolver/gyazo-resolver.js";
 
 interface Options {
   input: string;
@@ -136,40 +165,60 @@ async function main(): Promise<void> {
   await ensureDir(jsDir);
   await ensureDir(imagesDir);
 
-  // 画像をダウンロード
-  if (options.downloadImages) {
-    console.log("画像を抽出しています...");
-    const imageUrls = extractImageUrls(pages);
-    console.log(`画像数: ${imageUrls.length}`);
+  // 画像URLを抽出
+  console.log("画像を抽出しています...");
+  const allImageUrls = extractImageUrls(pages);
+  const gyazoUrls = allImageUrls.filter(isGyazoUrl);
+  const nonGyazoUrls = allImageUrls.filter((url) => !isGyazoUrl(url));
+  console.log(`画像数: ${allImageUrls.length} (Gyazo: ${gyazoUrls.length}, その他: ${nonGyazoUrls.length})`);
 
+  // Gyazo画像のURL解決
+  let gyazoResults: Map<string, GyazoResolveResult> = new Map();
+  if (gyazoUrls.length > 0) {
     if (options.gyazoAccessToken) {
-      console.log("Gyazo APIトークンが設定されています");
-    } else {
-      console.log("注意: Gyazo APIトークンが未設定のため、Gyazo画像は.pngとしてダウンロードされます");
-    }
-
-    if (imageUrls.length > 0) {
-      console.log("画像をダウンロードしています...");
-      let downloaded = 0;
-      const results = await downloadImages(imageUrls, assetsDir, {
+      console.log("Gyazo画像のURLを解決しています...");
+      let resolved = 0;
+      gyazoResults = await resolveGyazoUrls(gyazoUrls, options.gyazoAccessToken, {
         concurrency: options.concurrency,
-        gyazoAccessToken: options.gyazoAccessToken,
         onProgress: (completed, total, result) => {
           if (result.success) {
-            downloaded++;
+            resolved++;
           }
-          process.stdout.write(`\r進捗: ${completed}/${total} (成功: ${downloaded})`);
+          process.stdout.write(`\r進捗: ${completed}/${total} (成功: ${resolved})`);
         },
       });
       console.log();
 
-      const failed = results.filter((r) => !r.success);
+      const failed = Array.from(gyazoResults.values()).filter((r) => !r.success);
       if (failed.length > 0) {
-        console.log(`警告: ${failed.length} 件の画像ダウンロードに失敗しました`);
+        console.log(`警告: ${failed.length} 件のGyazo URL解決に失敗しました`);
       }
+    } else {
+      console.log("注意: Gyazo APIトークンが未設定のため、Gyazo画像はリンクとして表示されます");
     }
-    console.log();
   }
+
+  // Gyazo以外の画像をダウンロード
+  if (options.downloadImages && nonGyazoUrls.length > 0) {
+    console.log("画像をダウンロードしています...");
+    let downloaded = 0;
+    const results = await downloadImages(nonGyazoUrls, assetsDir, {
+      concurrency: options.concurrency,
+      onProgress: (completed, total, result) => {
+        if (result.success) {
+          downloaded++;
+        }
+        process.stdout.write(`\r進捗: ${completed}/${total} (成功: ${downloaded})`);
+      },
+    });
+    console.log();
+
+    const failed = results.filter((r) => !r.success);
+    if (failed.length > 0) {
+      console.log(`警告: ${failed.length} 件の画像ダウンロードに失敗しました`);
+    }
+  }
+  console.log();
 
   // リンクグラフを構築
   console.log("リンクグラフを構築しています...");
@@ -201,13 +250,13 @@ async function main(): Promise<void> {
     const filename = generatePageFilename(page.title);
     const filePath = path.join(pagesDir, filename);
 
-    // 画像URLをローカルパスに置換（オプション）
+    // Gyazo以外の画像URLをローカルパスに置換（オプション）
     let pageToRender = page;
     if (options.downloadImages) {
-      const imageUrls = extractImageUrls([page]);
+      const imageUrls = extractImageUrls([page]).filter((url) => !isGyazoUrl(url));
       if (imageUrls.length > 0) {
         const mappings = generateImageMappingsSync(imageUrls);
-        // linesの画像URLを置換
+        // linesの画像URLを置換（Gyazo以外のみ）
         const newLines = page.lines.map((line) => {
           if (typeof line === "string") {
             let newLine = line;
@@ -225,7 +274,11 @@ async function main(): Promise<void> {
       }
     }
 
-    const html = renderPage(pageToRender, linkGraph, projectName);
+    // Gyazo解決結果を渡してHTMLを生成
+    const html = renderPage(pageToRender, linkGraph, projectName, {
+      gyazoResults,
+      hasGyazoToken: !!options.gyazoAccessToken,
+    });
     await fs.writeFile(filePath, html);
 
     if ((i + 1) % 100 === 0 || i === pages.length - 1) {

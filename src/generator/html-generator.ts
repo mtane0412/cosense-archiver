@@ -1,6 +1,7 @@
 /**
  * HTML生成モジュール
  * パースされた行やページをHTMLに変換する
+ * Gyazo画像はAPIで解決した直リンクを使用する
  */
 import * as crypto from "crypto";
 import type { CosensePage } from "../parser/types.js";
@@ -9,9 +10,26 @@ import { parseLine, parseLines } from "../parser/line-parser.js";
 import { getLineText } from "../parser/types.js";
 import { get1HopLinks, get2HopLinks } from "../analyzer/link-analyzer.js";
 import type { ParsedNode, ParsedLine } from "../parser/line-types.js";
+import {
+  isGyazoUrl,
+  createGyazoFallbackLink,
+  type GyazoResolveResult,
+} from "../resolver/gyazo-resolver.js";
 
 // 最大ファイル名長（拡張子を除く）
 const MAX_FILENAME_LENGTH = 200;
+
+/**
+ * レンダリングコンテキスト
+ * ノードのレンダリングに必要な情報を保持
+ */
+export interface RenderContext {
+  existingPages: Set<string>;
+  /** Gyazo URL解決結果のマップ（元URL -> 解決結果） */
+  gyazoResults?: Map<string, GyazoResolveResult>;
+  /** Gyazo APIトークンが設定されているか */
+  hasGyazoToken?: boolean;
+}
 
 /**
  * HTMLエスケープ
@@ -70,15 +88,41 @@ function getPageUrlFromPage(title: string): string {
 }
 
 /**
+ * Gyazo画像をレンダリング
+ */
+function renderGyazoImage(url: string, context: RenderContext): string {
+  // Gyazo解決結果がある場合
+  if (context.gyazoResults) {
+    const result = context.gyazoResults.get(url);
+    if (result && result.success) {
+      // 動画の場合はGIF画像を表示
+      if (result.type === "video") {
+        return `<a href="${escapeHtml(result.videoUrl || url)}" target="_blank" rel="noopener"><img src="${escapeHtml(result.imageUrl)}" alt="" class="page-image gyazo-video" loading="lazy"></a>`;
+      }
+      // 通常の画像
+      return `<img src="${escapeHtml(result.imageUrl)}" alt="" class="page-image" loading="lazy">`;
+    }
+  }
+
+  // APIトークンがない場合は「Gyazo」リンクを表示
+  if (!context.hasGyazoToken) {
+    return createGyazoFallbackLink(url);
+  }
+
+  // 解決に失敗した場合はフォールバック（元のURLを使用）
+  return `<img src="${escapeHtml(url)}" alt="" class="page-image" loading="lazy">`;
+}
+
+/**
  * ノードをHTMLにレンダリング
  */
-function renderNode(node: ParsedNode, existingPages: Set<string>): string {
+function renderNode(node: ParsedNode, context: RenderContext): string {
   switch (node.type) {
     case "text":
       return escapeHtml(node.text);
 
     case "internal-link": {
-      const exists = existingPages.has(node.title);
+      const exists = context.existingPages.has(node.title);
       const className = exists ? "internal-link" : "internal-link missing-link";
       const href = exists ? getPageUrlFromPage(node.title) : "#";
       return `<a href="${href}" class="${className}">${escapeHtml(node.title)}</a>`;
@@ -91,13 +135,17 @@ function renderNode(node: ParsedNode, existingPages: Set<string>): string {
       return `<a href="https://scrapbox.io/${escapeHtml(node.project)}/${encodeURIComponent(node.page)}" class="external-project-link" target="_blank" rel="noopener">${escapeHtml(node.page || node.project)}</a>`;
 
     case "image":
+      // Gyazo URLの場合は特別な処理
+      if (isGyazoUrl(node.url)) {
+        return renderGyazoImage(node.url, context);
+      }
       return `<img src="${escapeHtml(node.url)}" alt="" class="page-image" loading="lazy">`;
 
     case "icon":
       return `<span class="icon">${escapeHtml(node.user)}</span>`;
 
     case "hashtag": {
-      const exists = existingPages.has(node.tag);
+      const exists = context.existingPages.has(node.tag);
       const className = exists ? "hashtag" : "hashtag missing-link";
       const href = exists ? getPageUrlFromPage(node.tag) : "#";
       return `<a href="${href}" class="${className}">#${escapeHtml(node.tag)}</a>`;
@@ -105,22 +153,22 @@ function renderNode(node: ParsedNode, existingPages: Set<string>): string {
 
     case "bold": {
       const level = Math.min(node.level, 3);
-      const children = node.children.map((c) => renderNode(c, existingPages)).join("");
+      const children = node.children.map((c) => renderNode(c, context)).join("");
       return `<strong class="bold-${level}">${children}</strong>`;
     }
 
     case "italic": {
-      const children = node.children.map((c) => renderNode(c, existingPages)).join("");
+      const children = node.children.map((c) => renderNode(c, context)).join("");
       return `<em>${children}</em>`;
     }
 
     case "strikethrough": {
-      const children = node.children.map((c) => renderNode(c, existingPages)).join("");
+      const children = node.children.map((c) => renderNode(c, context)).join("");
       return `<del>${children}</del>`;
     }
 
     case "underline": {
-      const children = node.children.map((c) => renderNode(c, existingPages)).join("");
+      const children = node.children.map((c) => renderNode(c, context)).join("");
       return `<u>${children}</u>`;
     }
 
@@ -141,10 +189,15 @@ function renderNode(node: ParsedNode, existingPages: Set<string>): string {
  */
 export function renderLine(
   line: string,
-  existingPages: Set<string> = new Set()
+  existingPages: Set<string> = new Set(),
+  context?: Partial<RenderContext>
 ): string {
   const parsed = parseLine(line);
-  const content = parsed.nodes.map((n) => renderNode(n, existingPages)).join("");
+  const renderContext: RenderContext = {
+    existingPages,
+    ...context,
+  };
+  const content = parsed.nodes.map((n) => renderNode(n, renderContext)).join("");
 
   if (parsed.indent > 0) {
     const bullet = '<span class="bullet">•</span>';
@@ -165,7 +218,7 @@ function renderCodeBlock(lines: string[], lang: string): string {
 /**
  * ページ本文をHTMLにレンダリング
  */
-function renderPageContent(page: CosensePage, existingPages: Set<string>): string {
+function renderPageContent(page: CosensePage, context: RenderContext): string {
   const lines = page.lines.map(getLineText);
   const parsedLines = parseLines(lines);
   const htmlParts: string[] = [];
@@ -196,7 +249,7 @@ function renderPageContent(page: CosensePage, existingPages: Set<string>): strin
     }
 
     // 通常行
-    const content = parsed.nodes.map((n) => renderNode(n, existingPages)).join("");
+    const content = parsed.nodes.map((n) => renderNode(n, context)).join("");
     if (parsed.indent > 0) {
       const bullet = '<span class="bullet">•</span>';
       htmlParts.push(`<div class="line indent-${parsed.indent}">${bullet}${content}</div>`);
@@ -280,9 +333,18 @@ function formatDate(timestamp: number): string {
 export function renderPage(
   page: CosensePage,
   linkGraph: LinkGraph,
-  projectName: string
+  projectName: string,
+  options?: {
+    gyazoResults?: Map<string, GyazoResolveResult>;
+    hasGyazoToken?: boolean;
+  }
 ): string {
-  const content = renderPageContent(page, linkGraph.existingPages);
+  const context: RenderContext = {
+    existingPages: linkGraph.existingPages,
+    gyazoResults: options?.gyazoResults,
+    hasGyazoToken: options?.hasGyazoToken,
+  };
+  const content = renderPageContent(page, context);
   const relatedPages = renderRelatedPages(page.title, linkGraph);
   const createdDate = formatDate(page.created);
   const updatedDate = formatDate(page.updated);

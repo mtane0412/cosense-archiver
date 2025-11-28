@@ -12,7 +12,12 @@
     "test:watch": "vitest",
     "lint": "tsc --noEmit"
   },
-  "keywords": ["cosense", "scrapbox", "static-site-generator", "archive"],
+  "keywords": [
+    "cosense",
+    "scrapbox",
+    "static-site-generator",
+    "archive"
+  ],
   "author": "",
   "license": "ISC",
   "type": "module",
@@ -21,5 +26,8 @@
     "esbuild": "^0.27.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.14"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3"
   }
 }

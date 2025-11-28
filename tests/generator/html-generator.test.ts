@@ -49,10 +49,55 @@ describe("renderLine", () => {
     expect(html).toContain("external-link");
   });
 
-  it("画像を img タグに変換する", () => {
-    const html = renderLine("[https://gyazo.com/abc123]");
+  it("通常の画像を img タグに変換する", () => {
+    const html = renderLine("[https://example.com/image.png]");
     expect(html).toContain("<img");
-    expect(html).toContain("gyazo.com/abc123");
+    expect(html).toContain("example.com/image.png");
+  });
+
+  it("Gyazo画像（トークンなし）はリンクとして表示する", () => {
+    // hasGyazoTokenがfalseの場合はGyazoリンクを表示
+    const html = renderLine("[https://gyazo.com/abc123]", new Set(), { hasGyazoToken: false });
+    expect(html).toContain("Gyazo");
+    expect(html).toContain('href="https://gyazo.com/abc123"');
+    expect(html).toContain("gyazo-link");
+  });
+
+  it("Gyazo画像（トークンあり・解決済み）はimgタグで表示する", () => {
+    const gyazoResults = new Map([
+      ["https://gyazo.com/abc123", {
+        originalUrl: "https://gyazo.com/abc123",
+        imageUrl: "https://i.gyazo.com/abc123.png",
+        type: "image" as const,
+        success: true,
+      }],
+    ]);
+    const html = renderLine("[https://gyazo.com/abc123]", new Set(), {
+      hasGyazoToken: true,
+      gyazoResults,
+    });
+    expect(html).toContain("<img");
+    expect(html).toContain("https://i.gyazo.com/abc123.png");
+  });
+
+  it("Gyazo動画はGIFで表示しクリックで動画リンクを開く", () => {
+    const gyazoResults = new Map([
+      ["https://gyazo.com/video123", {
+        originalUrl: "https://gyazo.com/video123",
+        imageUrl: "https://i.gyazo.com/video123.gif",
+        videoUrl: "https://i.gyazo.com/video123.mp4",
+        type: "video" as const,
+        success: true,
+      }],
+    ]);
+    const html = renderLine("[https://gyazo.com/video123]", new Set(), {
+      hasGyazoToken: true,
+      gyazoResults,
+    });
+    expect(html).toContain("<img");
+    expect(html).toContain("video123.gif");
+    expect(html).toContain('href="https://i.gyazo.com/video123.mp4"');
+    expect(html).toContain("gyazo-video");
   });
 
   it("ハッシュタグをリンクに変換する", () => {
