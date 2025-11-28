@@ -119,6 +119,20 @@ describe("generateLocalPath", () => {
     expect(localPath).toBe("images/gyazo-abc123.png");
   });
 
+  it("Scrapbox Files URLからローカルパスを生成できる", () => {
+    const url = "https://scrapbox.io/files/674d619ff9bc2444b77ffbca.png";
+    const localPath = generateLocalPath(url);
+
+    expect(localPath).toBe("images/scrapbox-674d619ff9bc2444b77ffbca.png");
+  });
+
+  it("Scrapbox Files URLで拡張子がない場合はpngを使用する", () => {
+    const url = "https://scrapbox.io/files/674d619ff9bc2444b77ffbca";
+    const localPath = generateLocalPath(url);
+
+    expect(localPath).toBe("images/scrapbox-674d619ff9bc2444b77ffbca.png");
+  });
+
   it("通常の画像URLからローカルパスを生成できる", () => {
     const url = "https://example.com/path/to/image.jpg";
     const localPath = generateLocalPath(url);

@@ -28,6 +28,8 @@ const GYAZO_PATTERN = /^https?:\/\/(i\.)?gyazo\.com\//;
 const URL_PATTERN = /^https?:\/\/[^\s\]]+/;
 // URLパターン（文中検索用）
 const URL_PATTERN_GLOBAL = /https?:\/\/[^\s\]]+/;
+// ローカル画像パスパターン（../assets/images/xxx.png形式）
+const LOCAL_IMAGE_PATH = /^\.\.\/assets\/images\/[^\s\]]+\.(png|jpg|jpeg|gif|webp|svg|bmp)$/i;
 
 /**
  * インデントを計測（スペースとタブを1文字としてカウント）
@@ -99,11 +101,24 @@ function parseBracket(content: string): ParsedNode | null {
   // 太字 [* text] [** text] [*** text]
   const boldMatch = content.match(/^(\*+)\s+(.+)$/);
   if (boldMatch) {
+    const boldContent = boldMatch[2];
+    // 太字の中身が画像URLのみの場合は画像として扱う（[[画像URL]]記法に相当）
+    if (
+      GYAZO_PATTERN.test(boldContent) ||
+      IMAGE_EXTENSIONS.test(boldContent) ||
+      LOCAL_IMAGE_PATH.test(boldContent)
+    ) {
+      return {
+        type: "image",
+        raw: `[${content}]`,
+        url: boldContent,
+      } as ImageNode;
+    }
     return {
       type: "bold",
       raw: `[${content}]`,
       level: boldMatch[1].length,
-      children: parseInlineContent(boldMatch[2]),
+      children: parseInlineContent(boldContent),
     } as BoldNode;
   }
 
@@ -135,6 +150,15 @@ function parseBracket(content: string): ParsedNode | null {
       raw: `[${content}]`,
       children: parseInlineContent(underlineMatch[1]),
     } as UnderlineNode;
+  }
+
+  // ローカル画像パス（../assets/images/xxx.png形式）
+  if (LOCAL_IMAGE_PATH.test(content)) {
+    return {
+      type: "image",
+      raw: `[${content}]`,
+      url: content,
+    } as ImageNode;
   }
 
   // URL関連の処理（文中のURLも検出）

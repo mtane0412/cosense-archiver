@@ -140,6 +140,57 @@ describe("parseLine - 画像", () => {
     const imageNode = result.nodes.find((n) => n.type === "image") as ParsedNode;
     expect(imageNode).toBeDefined();
   });
+
+  it("Scrapbox Files画像 [https://scrapbox.io/files/xxx.png]", () => {
+    const result = parseLine("[https://scrapbox.io/files/674d619ff9bc2444b77ffbca.png]");
+    const imageNode = result.nodes.find((n) => n.type === "image") as ParsedNode;
+    expect(imageNode).toBeDefined();
+    if (imageNode.type === "image") {
+      expect(imageNode.url).toBe("https://scrapbox.io/files/674d619ff9bc2444b77ffbca.png");
+    }
+  });
+
+  it("ローカル画像パス [../assets/images/xxx.png]", () => {
+    const result = parseLine("[../assets/images/scrapbox-674d619ff9bc2444b77ffbca.png]");
+    const imageNode = result.nodes.find((n) => n.type === "image") as ParsedNode;
+    expect(imageNode).toBeDefined();
+    if (imageNode.type === "image") {
+      expect(imageNode.url).toBe("../assets/images/scrapbox-674d619ff9bc2444b77ffbca.png");
+    }
+  });
+
+  it("ローカル画像パス（jpg）", () => {
+    const result = parseLine("[../assets/images/abc123.jpg]");
+    const imageNode = result.nodes.find((n) => n.type === "image") as ParsedNode;
+    expect(imageNode).toBeDefined();
+  });
+
+  it("太字記法内の画像URL [* https://scrapbox.io/files/xxx.png]", () => {
+    const result = parseLine("[* https://scrapbox.io/files/674d619ff9bc2444b77ffbca.png]");
+    const imageNode = result.nodes.find((n) => n.type === "image") as ParsedNode;
+    expect(imageNode).toBeDefined();
+    if (imageNode.type === "image") {
+      expect(imageNode.url).toBe("https://scrapbox.io/files/674d619ff9bc2444b77ffbca.png");
+    }
+  });
+
+  it("太字記法内のGyazo URL [* https://gyazo.com/xxx]", () => {
+    const result = parseLine("[* https://gyazo.com/abc123]");
+    const imageNode = result.nodes.find((n) => n.type === "image") as ParsedNode;
+    expect(imageNode).toBeDefined();
+    if (imageNode.type === "image") {
+      expect(imageNode.url).toBe("https://gyazo.com/abc123");
+    }
+  });
+
+  it("太字記法内のローカル画像パス [* ../assets/images/xxx.png]", () => {
+    const result = parseLine("[* ../assets/images/scrapbox-abc123.png]");
+    const imageNode = result.nodes.find((n) => n.type === "image") as ParsedNode;
+    expect(imageNode).toBeDefined();
+    if (imageNode.type === "image") {
+      expect(imageNode.url).toBe("../assets/images/scrapbox-abc123.png");
+    }
+  });
 });
 
 describe("parseLine - アイコン", () => {

@@ -2,6 +2,7 @@
  * 画像ダウンロードモジュール
  * ページ内の画像URLを抽出し、ローカルにダウンロードする
  * Gyazo画像はGyazo APIを使用して正確な拡張子で取得する
+ * Scrapbox Files URLはconnect.sid Cookieを使用して認証付きでダウンロードする
  */
 import * as fs from "fs/promises";
 import * as path from "path";
@@ -9,6 +10,12 @@ import * as crypto from "crypto";
 import type { CosensePage } from "../parser/types.js";
 import { parseLines } from "../parser/line-parser.js";
 import { getLineText } from "../parser/types.js";
+import {
+  isScrapboxFilesUrl,
+  extractScrapboxFileId,
+  getScrapboxFileExtension,
+  resolveScrapboxFileUrl,
+} from "../resolver/scrapbox-files-resolver.js";
 
 /**
  * 画像URLとローカルパスのマッピング
@@ -114,6 +121,7 @@ export async function fetchGyazoImageInfo(
 /**
  * URLからローカルパスを生成する（拡張子はデフォルト値）
  * Gyazo画像の場合、実際の拡張子はAPI経由で取得後に決定される
+ * Scrapbox Files URLの場合、ファイルIDをベースにしたパスを生成
  */
 export function generateLocalPath(url: string, extension?: string): string {
   // Gyazo URLの場合
@@ -121,6 +129,13 @@ export function generateLocalPath(url: string, extension?: string): string {
   if (gyazoId) {
     const ext = extension || "png";
     return `images/gyazo-${gyazoId}.${ext}`;
+  }
+
+  // Scrapbox Files URLの場合
+  const scrapboxFileId = extractScrapboxFileId(url);
+  if (scrapboxFileId) {
+    const ext = extension || getScrapboxFileExtension(url);
+    return `images/scrapbox-${scrapboxFileId}.${ext}`;
   }
 
   // その他のURLの場合はハッシュベースのファイル名
@@ -182,11 +197,14 @@ export function generateImageMappingsSync(urls: string[]): ImageMapping[] {
  */
 export interface DownloadOptions {
   gyazoAccessToken?: string;
+  connectSid?: string;
+  skipExisting?: boolean;
 }
 
 /**
  * 画像をダウンロードする
  * Gyazo画像の場合はAPIを使用して正確な拡張子を取得する
+ * Scrapbox Files URLの場合はconnect.sidを使用して認証付きでダウンロードする
  */
 export async function downloadImage(
   url: string,
@@ -196,6 +214,7 @@ export async function downloadImage(
   const gyazoId = extractGyazoId(url);
   let localPath: string;
   let fetchUrl: string;
+  let fetchOptions: RequestInit = {};
 
   try {
     // Gyazo URLの場合
@@ -215,6 +234,23 @@ export async function downloadImage(
 
       localPath = generateLocalPath(url, extension);
       fetchUrl = imageUrl;
+    } else if (isScrapboxFilesUrl(url)) {
+      // Scrapbox Files URLの場合
+      localPath = generateLocalPath(url);
+
+      if (options.connectSid) {
+        // connect.sidを使用してURLを解決
+        const resolveResult = await resolveScrapboxFileUrl(url, options.connectSid);
+        if (resolveResult.success) {
+          fetchUrl = resolveResult.resolvedUrl;
+        } else {
+          // 解決失敗時は元のURLを使用（パブリックファイルの可能性）
+          fetchUrl = url;
+        }
+      } else {
+        // connect.sidがない場合は元のURLを使用
+        fetchUrl = url;
+      }
     } else {
       // 通常の画像URL
       localPath = generateLocalPath(url);
@@ -223,11 +259,26 @@ export async function downloadImage(
 
     const fullPath = path.join(outputDir, localPath);
 
+    // 既存ファイルのスキップチェック
+    if (options.skipExisting) {
+      try {
+        await fs.access(fullPath);
+        // ファイルが存在する場合はスキップ
+        return {
+          url,
+          localPath,
+          success: true,
+        };
+      } catch {
+        // ファイルが存在しない場合は続行
+      }
+    }
+
     // ディレクトリを作成
     await fs.mkdir(path.dirname(fullPath), { recursive: true });
 
     // 画像をダウンロード
-    const response = await fetch(fetchUrl);
+    const response = await fetch(fetchUrl, fetchOptions);
     if (!response.ok) {
       return {
         url,
@@ -271,7 +322,7 @@ export async function downloadImages(
   outputDir: string,
   options: DownloadImagesOptions = {}
 ): Promise<DownloadResult[]> {
-  const { concurrency = 5, onProgress, gyazoAccessToken } = options;
+  const { concurrency = 5, onProgress, gyazoAccessToken, connectSid, skipExisting } = options;
   const results: DownloadResult[] = [];
   let completed = 0;
   const total = urls.length;
@@ -287,7 +338,7 @@ export async function downloadImages(
           const url = queue.shift();
           if (!url) break;
 
-          const result = await downloadImage(url, outputDir, { gyazoAccessToken });
+          const result = await downloadImage(url, outputDir, { gyazoAccessToken, connectSid, skipExisting });
           results.push(result);
           completed++;
 

@@ -57,6 +57,7 @@ interface Options {
   downloadImages: boolean;
   concurrency: number;
   gyazoAccessToken?: string;
+  connectSid?: string;
 }
 
 function parseArgs(): Options {
@@ -67,6 +68,7 @@ function parseArgs(): Options {
     downloadImages: true,
     concurrency: 5,
     gyazoAccessToken: process.env.GYAZO_ACCESS_TOKEN,
+    connectSid: process.env.CONNECT_SID,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -80,6 +82,8 @@ function parseArgs(): Options {
       options.concurrency = parseInt(args[++i], 10) || 5;
     } else if (arg === "--gyazo-token") {
       options.gyazoAccessToken = args[++i];
+    } else if (arg === "--connect-sid") {
+      options.connectSid = args[++i];
     } else if (arg === "-h" || arg === "--help") {
       showHelp();
       process.exit(0);
@@ -106,6 +110,7 @@ Cosense Archiver - Cosense(旧Scrapbox)のJSONから静的サイトを生成
   --no-images             画像のダウンロードをスキップ
   -c, --concurrency <n>   画像ダウンロードの並列数 (デフォルト: 5)
   --gyazo-token <token>   Gyazo APIアクセストークン (環境変数 GYAZO_ACCESS_TOKEN でも指定可)
+  --connect-sid <sid>     Scrapbox認証用Cookie (環境変数 CONNECT_SID でも指定可)
   -h, --help              このヘルプを表示
 
 例:
@@ -113,6 +118,7 @@ Cosense Archiver - Cosense(旧Scrapbox)のJSONから静的サイトを生成
   cosense-archiver export.json -o ./dist
   cosense-archiver export.json --no-images
   GYAZO_ACCESS_TOKEN=xxx cosense-archiver export.json
+  CONNECT_SID=xxx cosense-archiver export.json
 `);
 }
 
@@ -201,9 +207,15 @@ async function main(): Promise<void> {
   // Gyazo以外の画像をダウンロード
   if (options.downloadImages && nonGyazoUrls.length > 0) {
     console.log("画像をダウンロードしています...");
+    console.log("  (既存ファイルはスキップ)");
+    if (options.connectSid) {
+      console.log("  (Scrapbox認証: 有効)");
+    }
     let downloaded = 0;
     const results = await downloadImages(nonGyazoUrls, assetsDir, {
       concurrency: options.concurrency,
+      connectSid: options.connectSid,
+      skipExisting: true,
       onProgress: (completed, total, result) => {
         if (result.success) {
           downloaded++;
