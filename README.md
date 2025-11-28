@@ -28,13 +28,7 @@ Cosense（旧Scrapbox）のJSONエクスポートから、GitHub Pagesでホス�
 ## インストール
 
 ```bash
-npm install -g cosense-archiver
-```
-
-または、リポジトリをクローンしてローカルで使用：
-
-```bash
-git clone https://github.com/yourusername/cosense-archiver.git
+git clone https://github.com/mtane0412/cosense-archiver.git
 cd cosense-archiver
 npm install
 npm run build
@@ -45,13 +39,13 @@ npm run build
 ### 基本的な使い方
 
 ```bash
-cosense-archiver export.json
+node dist/index.js export.json
 ```
 
 ### オプション
 
 ```
-cosense-archiver <input.json> [options]
+node dist/index.js <input.json> [options]
 
 引数:
   <input.json>     CosenseからエクスポートしたJSONファイル
@@ -68,19 +62,19 @@ cosense-archiver <input.json> [options]
 
 ```bash
 # 基本的な使用
-cosense-archiver export.json
+node dist/index.js export.json
 
 # 出力先を指定
-cosense-archiver export.json -o ./dist
+node dist/index.js export.json -o ./dist
 
 # 画像ダウンロードをスキップ
-cosense-archiver export.json --no-images
+node dist/index.js export.json --no-images
 
 # Gyazo APIトークンを指定（高画質画像のダウンロード）
-cosense-archiver export.json --gyazo-token YOUR_TOKEN
+node dist/index.js export.json --gyazo-token YOUR_TOKEN
 
 # 環境変数でGyazoトークンを指定
-GYAZO_ACCESS_TOKEN=YOUR_TOKEN cosense-archiver export.json
+GYAZO_ACCESS_TOKEN=YOUR_TOKEN node dist/index.js export.json
 ```
 
 ## Gyazo画像について
