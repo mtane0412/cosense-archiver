@@ -163,6 +163,7 @@ export interface ParsedLine {
   isCodeBlock: boolean; // code:filename の行かどうか
   codeBlockLang?: string; // コードブロックの言語
   isCodeBlockContent: boolean; // コードブロックの内容行かどうか
+  isQuote: boolean; // 引用ブロック（>で始まる行）かどうか
 }
 
 /**

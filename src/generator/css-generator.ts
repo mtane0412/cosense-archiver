@@ -266,6 +266,14 @@ body {
   margin: 0 2px;
 }
 
+/* Quote (引用ブロック) */
+.quote {
+  background-color: #f5f5f5;
+  border-left: 3px solid #ccc;
+  padding: 4px 12px;
+  margin: 4px 0;
+}
+
 /* Math */
 .math {
   font-family: "Times New Roman", serif;

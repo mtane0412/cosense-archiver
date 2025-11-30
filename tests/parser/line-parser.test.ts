@@ -346,3 +346,41 @@ describe("parseLine - 複合", () => {
     expect(result.nodes.some((n) => n.type === "hashtag")).toBe(true);
   });
 });
+
+describe("parseLine - 引用ブロック", () => {
+  it("> で始まる行は引用ブロックとして認識される", () => {
+    const result = parseLine("> これは引用です");
+    expect(result.isQuote).toBe(true);
+    expect(result.nodes.some((n) => n.type === "text" && n.text === "これは引用です")).toBe(true);
+  });
+
+  it(">のあとにスペースがなくても引用ブロックとして認識される", () => {
+    const result = parseLine(">スペースなしの引用");
+    expect(result.isQuote).toBe(true);
+    expect(result.nodes.some((n) => n.type === "text" && n.text === "スペースなしの引用")).toBe(true);
+  });
+
+  it("インデント + > も引用ブロックとして認識される", () => {
+    const result = parseLine(" > インデントありの引用");
+    expect(result.indent).toBe(1);
+    expect(result.isQuote).toBe(true);
+    expect(result.nodes.some((n) => n.type === "text" && n.text === "インデントありの引用")).toBe(true);
+  });
+
+  it("引用ブロック内でリンクがパースされる", () => {
+    const result = parseLine(">引用内の[リンク]です");
+    expect(result.isQuote).toBe(true);
+    expect(result.nodes.some((n) => n.type === "internal-link")).toBe(true);
+  });
+
+  it(">のみの行は空の引用として認識される", () => {
+    const result = parseLine(">");
+    expect(result.isQuote).toBe(true);
+    expect(result.nodes).toHaveLength(0);
+  });
+
+  it(">> のような複数の>は引用として認識されない（通常テキスト）", () => {
+    const result = parseLine(">> ネストは通常テキスト");
+    expect(result.isQuote).toBe(false);
+  });
+});

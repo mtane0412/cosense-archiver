@@ -186,6 +186,7 @@ function renderNode(node: ParsedNode, context: RenderContext): string {
 /**
  * 1行をHTMLにレンダリング
  * インデントがある行には先頭に黒丸（•）を追加
+ * 引用ブロック（>で始まる行）はblockquoteタグで囲む
  */
 export function renderLine(
   line: string,
@@ -198,6 +199,14 @@ export function renderLine(
     ...context,
   };
   const content = parsed.nodes.map((n) => renderNode(n, renderContext)).join("");
+
+  // 引用ブロック
+  if (parsed.isQuote) {
+    if (parsed.indent > 0) {
+      return `<blockquote class="quote indent-${parsed.indent}">${content}</blockquote>`;
+    }
+    return `<blockquote class="quote">${content}</blockquote>`;
+  }
 
   if (parsed.indent > 0) {
     const bullet = '<span class="bullet">•</span>';
@@ -250,6 +259,18 @@ function renderPageContent(page: CosensePage, context: RenderContext): string {
 
     // 通常行
     const content = parsed.nodes.map((n) => renderNode(n, context)).join("");
+
+    // 引用ブロック
+    if (parsed.isQuote) {
+      if (parsed.indent > 0) {
+        htmlParts.push(`<blockquote class="quote indent-${parsed.indent}">${content}</blockquote>`);
+      } else {
+        htmlParts.push(`<blockquote class="quote">${content}</blockquote>`);
+      }
+      i++;
+      continue;
+    }
+
     if (parsed.indent > 0) {
       const bullet = '<span class="bullet">•</span>';
       htmlParts.push(`<div class="line indent-${parsed.indent}">${bullet}${content}</div>`);

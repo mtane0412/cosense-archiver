@@ -45,6 +45,23 @@ function measureIndent(line: string): { indent: number; content: string } {
 }
 
 /**
+ * 引用ブロック判定（>で始まる行）
+ * >の後にスペースがあってもなくても引用として認識
+ * ただし>>のような複数の>は引用として認識しない
+ */
+function parseQuote(content: string): { isQuote: boolean; quoteContent: string } {
+  // 先頭が>で、次の文字が>でない場合のみ引用として認識
+  if (content.startsWith(">") && !content.startsWith(">>")) {
+    // > または > の形式
+    const afterGt = content.slice(1);
+    // >の後にスペースがある場合は除去、なければそのまま
+    const quoteContent = afterGt.startsWith(" ") ? afterGt.slice(1) : afterGt;
+    return { isQuote: true, quoteContent };
+  }
+  return { isQuote: false, quoteContent: content };
+}
+
+/**
  * コードブロック開始行かどうかを判定
  */
 function isCodeBlockStart(content: string): {
@@ -347,6 +364,7 @@ export function parseLine(
       ],
       isCodeBlock: false,
       isCodeBlockContent: true,
+      isQuote: false,
     };
   }
 
@@ -365,6 +383,22 @@ export function parseLine(
       isCodeBlock: true,
       codeBlockLang: codeBlockInfo.lang,
       isCodeBlockContent: false,
+      isQuote: false,
+    };
+  }
+
+  // 引用ブロック判定
+  const quoteInfo = parseQuote(content);
+  if (quoteInfo.isQuote) {
+    const nodes = quoteInfo.quoteContent
+      ? parseInlineContent(quoteInfo.quoteContent)
+      : [];
+    return {
+      indent,
+      nodes,
+      isCodeBlock: false,
+      isCodeBlockContent: false,
+      isQuote: true,
     };
   }
 
@@ -376,6 +410,7 @@ export function parseLine(
     nodes,
     isCodeBlock: false,
     isCodeBlockContent: false,
+    isQuote: false,
   };
 }
 

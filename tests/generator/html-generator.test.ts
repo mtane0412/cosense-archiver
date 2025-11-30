@@ -159,6 +159,27 @@ describe("renderLine", () => {
     expect(html).not.toContain("•");
     expect(html).not.toContain("bullet");
   });
+
+  it("引用ブロック（> ）をblockquoteタグに変換する", () => {
+    const html = renderLine("> これは引用です");
+    expect(html).toContain("<blockquote");
+    expect(html).toContain("これは引用です");
+    expect(html).toContain("</blockquote>");
+  });
+
+  it("引用ブロック（>スペースなし）をblockquoteタグに変換する", () => {
+    const html = renderLine(">スペースなしの引用");
+    expect(html).toContain("<blockquote");
+    expect(html).toContain("スペースなしの引用");
+    expect(html).toContain("</blockquote>");
+  });
+
+  it("引用ブロック内のリンクもパースされる", () => {
+    const html = renderLine(">引用内の[リンク]です", new Set(["リンク"]));
+    expect(html).toContain("<blockquote");
+    expect(html).toContain("internal-link");
+    expect(html).toContain("リンク");
+  });
 });
 
 describe("generatePageFilename", () => {
