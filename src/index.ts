@@ -50,11 +50,16 @@ import {
   resolveGyazoUrls,
   type GyazoResolveResult,
 } from "./resolver/gyazo-resolver.js";
+import {
+  uploadImagesToGyazo,
+  type UploadResult,
+} from "./uploader/gyazo-uploader.js";
 
 interface Options {
   input: string;
   output: string;
   downloadImages: boolean;
+  uploadToGyazo: boolean;
   concurrency: number;
   gyazoAccessToken?: string;
   connectSid?: string;
@@ -66,6 +71,7 @@ function parseArgs(): Options {
     input: "",
     output: "./output",
     downloadImages: true,
+    uploadToGyazo: false,
     concurrency: 5,
     gyazoAccessToken: process.env.GYAZO_ACCESS_TOKEN,
     connectSid: process.env.CONNECT_SID,
@@ -78,6 +84,8 @@ function parseArgs(): Options {
       options.output = args[++i] || "./output";
     } else if (arg === "--no-images") {
       options.downloadImages = false;
+    } else if (arg === "--upload-to-gyazo") {
+      options.uploadToGyazo = true;
     } else if (arg === "-c" || arg === "--concurrency") {
       options.concurrency = parseInt(args[++i], 10) || 5;
     } else if (arg === "--gyazo-token") {
@@ -108,7 +116,9 @@ Cosense Archiver - Cosense(旧Scrapbox)のJSONから静的サイトを生成
 オプション:
   -o, --output <dir>      出力先ディレクトリ (デフォルト: ./output)
   --no-images             画像のダウンロードをスキップ
-  -c, --concurrency <n>   画像ダウンロードの並列数 (デフォルト: 5)
+  --upload-to-gyazo       Gyazo以外の画像をGyazoにアップロードしてURLを置換
+                          (--gyazo-token が必須)
+  -c, --concurrency <n>   画像ダウンロード/アップロードの並列数 (デフォルト: 5)
   --gyazo-token <token>   Gyazo APIアクセストークン (環境変数 GYAZO_ACCESS_TOKEN でも指定可)
   --connect-sid <sid>     Scrapbox認証用Cookie (環境変数 CONNECT_SID でも指定可)
   -h, --help              このヘルプを表示
@@ -117,7 +127,8 @@ Cosense Archiver - Cosense(旧Scrapbox)のJSONから静的サイトを生成
   cosense-archiver export.json
   cosense-archiver export.json -o ./dist
   cosense-archiver export.json --no-images
-  GYAZO_ACCESS_TOKEN=xxx cosense-archiver export.json
+  cosense-archiver export.json --upload-to-gyazo --gyazo-token xxx
+  GYAZO_ACCESS_TOKEN=xxx cosense-archiver export.json --upload-to-gyazo
   CONNECT_SID=xxx cosense-archiver export.json
 `);
 }
@@ -204,30 +215,73 @@ async function main(): Promise<void> {
     }
   }
 
-  // Gyazo以外の画像をダウンロード
-  if (options.downloadImages && nonGyazoUrls.length > 0) {
-    console.log("画像をダウンロードしています...");
-    console.log("  (既存ファイルはスキップ)");
-    if (options.connectSid) {
-      console.log("  (Scrapbox認証: 有効)");
-    }
-    let downloaded = 0;
-    const results = await downloadImages(nonGyazoUrls, assetsDir, {
-      concurrency: options.concurrency,
-      connectSid: options.connectSid,
-      skipExisting: true,
-      onProgress: (completed, total, result) => {
-        if (result.success) {
-          downloaded++;
-        }
-        process.stdout.write(`\r進捗: ${completed}/${total} (成功: ${downloaded})`);
-      },
-    });
-    console.log();
+  // Gyazo以外の画像を処理
+  let uploadResults: Map<string, UploadResult> = new Map();
+  if (nonGyazoUrls.length > 0) {
+    if (options.uploadToGyazo) {
+      // Gyazoにアップロードする場合
+      if (!options.gyazoAccessToken) {
+        console.error("エラー: --upload-to-gyazo を使用するには --gyazo-token が必要です");
+        process.exit(1);
+      }
 
-    const failed = results.filter((r) => !r.success);
-    if (failed.length > 0) {
-      console.log(`警告: ${failed.length} 件の画像ダウンロードに失敗しました`);
+      // 既存のローカルファイルがあれば使用するためのマッピングを作成
+      const urlToLocalPath = new Map<string, string>();
+      const imageMappings = generateImageMappingsSync(nonGyazoUrls);
+      for (const mapping of imageMappings) {
+        urlToLocalPath.set(mapping.originalUrl, mapping.localPath);
+      }
+
+      console.log("画像をGyazoにアップロードしています...");
+      console.log("  (既存のローカルファイルがあれば使用)");
+      if (options.connectSid) {
+        console.log("  (Scrapbox認証: 有効)");
+      }
+      let uploaded = 0;
+      uploadResults = await uploadImagesToGyazo(nonGyazoUrls, {
+        accessToken: options.gyazoAccessToken,
+        connectSid: options.connectSid,
+        localImageDir: assetsDir,
+        urlToLocalPath,
+        concurrency: Math.min(options.concurrency, 3), // Gyazo APIのレート制限を考慮
+        onProgress: (completed, total, result) => {
+          if (result.success) {
+            uploaded++;
+          }
+          process.stdout.write(`\r進捗: ${completed}/${total} (成功: ${uploaded})`);
+        },
+      });
+      console.log();
+
+      const failed = Array.from(uploadResults.values()).filter((r) => !r.success);
+      if (failed.length > 0) {
+        console.log(`警告: ${failed.length} 件の画像アップロードに失敗しました`);
+      }
+    } else if (options.downloadImages) {
+      // ローカルにダウンロードする場合
+      console.log("画像をダウンロードしています...");
+      console.log("  (既存ファイルはスキップ)");
+      if (options.connectSid) {
+        console.log("  (Scrapbox認証: 有効)");
+      }
+      let downloaded = 0;
+      const results = await downloadImages(nonGyazoUrls, assetsDir, {
+        concurrency: options.concurrency,
+        connectSid: options.connectSid,
+        skipExisting: true,
+        onProgress: (completed, total, result) => {
+          if (result.success) {
+            downloaded++;
+          }
+          process.stdout.write(`\r進捗: ${completed}/${total} (成功: ${downloaded})`);
+        },
+      });
+      console.log();
+
+      const failed = results.filter((r) => !r.success);
+      if (failed.length > 0) {
+        console.log(`警告: ${failed.length} 件の画像ダウンロードに失敗しました`);
+      }
     }
   }
   console.log();
@@ -262,13 +316,30 @@ async function main(): Promise<void> {
     const filename = generatePageFilename(page.title);
     const filePath = path.join(pagesDir, filename);
 
-    // Gyazo以外の画像URLをローカルパスに置換（オプション）
+    // Gyazo以外の画像URLを置換
     let pageToRender = page;
-    if (options.downloadImages) {
-      const imageUrls = extractImageUrls([page]).filter((url) => !isGyazoUrl(url));
-      if (imageUrls.length > 0) {
+    const imageUrls = extractImageUrls([page]).filter((url) => !isGyazoUrl(url));
+    if (imageUrls.length > 0) {
+      if (options.uploadToGyazo && uploadResults.size > 0) {
+        // Gyazoにアップロードした場合: Gyazo URLに置換
+        const newLines = page.lines.map((line) => {
+          if (typeof line === "string") {
+            let newLine = line;
+            for (const url of imageUrls) {
+              const result = uploadResults.get(url);
+              if (result && result.success) {
+                // 元のURLをGyazo URLに置換
+                newLine = newLine.replace(url, result.gyazoUrl);
+              }
+            }
+            return newLine;
+          }
+          return line;
+        });
+        pageToRender = { ...page, lines: newLines };
+      } else if (options.downloadImages && !options.uploadToGyazo) {
+        // ローカルにダウンロードした場合: ローカルパスに置換
         const mappings = generateImageMappingsSync(imageUrls);
-        // linesの画像URLを置換（Gyazo以外のみ）
         const newLines = page.lines.map((line) => {
           if (typeof line === "string") {
             let newLine = line;
@@ -286,9 +357,26 @@ async function main(): Promise<void> {
       }
     }
 
+    // アップロードされた画像のGyazoResolveResultを追加
+    // （アップロードした画像もGyazo画像として解決結果に追加する）
+    const combinedGyazoResults = new Map(gyazoResults);
+    if (options.uploadToGyazo) {
+      for (const [, uploadResult] of uploadResults) {
+        if (uploadResult.success) {
+          // アップロード後のGyazo URLの解決結果を追加
+          combinedGyazoResults.set(uploadResult.gyazoUrl, {
+            originalUrl: uploadResult.gyazoUrl,
+            imageUrl: uploadResult.gyazoImageUrl,
+            type: "image",
+            success: true,
+          });
+        }
+      }
+    }
+
     // Gyazo解決結果を渡してHTMLを生成
     const html = renderPage(pageToRender, linkGraph, projectName, {
-      gyazoResults,
+      gyazoResults: combinedGyazoResults,
       hasGyazoToken: !!options.gyazoAccessToken,
     });
     await fs.writeFile(filePath, html);

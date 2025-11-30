@@ -12,6 +12,9 @@ Cosense（旧Scrapbox）のJSONエクスポートから、GitHub Pagesでホス�
   - Gyazo画像対応（APIトークンで高画質取得）
   - プライベートプロジェクトの画像対応（`connect.sid` 認証）
   - 既存画像のスキップ（再ビルド高速化）
+- Gyazoアップロード機能
+  - Gyazo以外の画像をGyazoにアップロードしてURL置換
+  - ローカル保存不要でGitHub Pagesのファイル容量を節約
 - レスポンシブデザイン
 
 ## 対応記法
@@ -56,7 +59,8 @@ node dist/index.js <input.json> [options]
 オプション:
   -o, --output <dir>      出力先ディレクトリ (デフォルト: ./output)
   --no-images             画像のダウンロードをスキップ
-  -c, --concurrency <n>   画像ダウンロードの並列数 (デフォルト: 5)
+  --upload-to-gyazo       Gyazo以外の画像をGyazoにアップロードしてURLを置換
+  -c, --concurrency <n>   画像ダウンロード/アップロードの並列数 (デフォルト: 5)
   --gyazo-token <token>   Gyazo APIアクセストークン
   --connect-sid <sid>     Scrapbox認証用Cookie（プライベート画像用）
   -h, --help              このヘルプを表示
@@ -82,6 +86,9 @@ node dist/index.js export.json --connect-sid YOUR_CONNECT_SID
 
 # 環境変数で認証情報を指定
 GYAZO_ACCESS_TOKEN=xxx CONNECT_SID=xxx node dist/index.js export.json
+
+# Gyazo以外の画像をGyazoにアップロード（ファイル容量節約）
+node dist/index.js export.json --upload-to-gyazo --gyazo-token YOUR_TOKEN
 ```
 
 ## 画像ダウンロードについて
@@ -121,6 +128,43 @@ CONNECT_SID=your_connect_sid_here
 ### 再ビルド時の高速化
 
 画像ダウンロードは既存ファイルを自動的にスキップします。再ビルド時には新規画像のみダウンロードされるため、効率的に更新できます。
+
+## Gyazoアップロード機能
+
+`--upload-to-gyazo` オプションを使用すると、Gyazo以外の画像（Scrapbox Files、外部サイトの画像など）をGyazoにアップロードし、生成されるHTMLではGyazo URLを参照するようになります。
+
+### メリット
+
+- **ファイル容量の節約**: 画像をローカルに保存しないため、GitHub Pagesのリポジトリサイズを抑えられます
+- **外部ホスティング**: 画像はGyazoでホストされるため、高速な配信が可能
+
+### 使用方法
+
+```bash
+# Gyazo以外の画像をGyazoにアップロード
+node dist/index.js export.json --upload-to-gyazo --gyazo-token YOUR_TOKEN
+
+# プライベートプロジェクトの画像も含める場合
+node dist/index.js export.json --upload-to-gyazo --gyazo-token YOUR_TOKEN --connect-sid YOUR_SID
+```
+
+### ローカルファイルの再利用
+
+既に `--upload-to-gyazo` を使わずに画像をダウンロード済みの場合、2回目以降の実行では**ダウンロード済みのローカルファイルを使用**してGyazoにアップロードします。これにより、ネットワーク通信量と時間を節約できます。
+
+```bash
+# 1回目: 通常のダウンロード
+node dist/index.js export.json
+
+# 2回目: ダウンロード済み画像を使用してGyazoにアップロード
+node dist/index.js export.json --upload-to-gyazo --gyazo-token YOUR_TOKEN
+```
+
+### 注意事項
+
+- `--upload-to-gyazo` を使用するには `--gyazo-token` が必須です
+- Gyazo APIのレート制限を考慮して、並列数は最大3に制限されています
+- アップロードした画像はGyazoアカウントに保存されます
 
 ## 生成されるサイト構造
 
